@@ -172,16 +172,6 @@ jobs:
             --exit-level WARN \
             ${{ fromJSON(steps.meta.outputs.json).tags[0] }}
 
-      - name: Run Snyk to check Docker image for vulnerabilities
-        uses: snyk/actions/docker@master
-        env:
-          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-        with:
-          image: ${{ fromJSON(steps.meta.outputs.json).tags[0] }}
-          args: --severity-threshold=high --fail-on=all
-        continue-on-error: true
-        if: env.SNYK_TOKEN != ''
-
   # Infrastructure Security Scanning
   infrastructure-scan:
     name: Infrastructure Security Scan
