@@ -59,20 +59,25 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: SonarCloud Scan
-        uses: SonarSource/sonarcloud-github-action@master
+      - name: SonarQube Scan
+        uses: SonarSource/sonarqube-scan-action@v5
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        with:
-          projectBaseDir: ${{ env.WORKING_DIRECTORY }}
-          args: >
-            -Dsonar.projectKey=${{ github.repository_owner }}_${{ github.event.repository.name }}
-            -Dsonar.organization=${{ github.repository_owner }}
-            -Dsonar.sources=src
-            -Dsonar.exclusions=node_modules/**,coverage/**,*.test.js,**/*.test.js
-            -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info
-        continue-on-error: true
+
+      # - name: SonarCloud Scan
+      #   uses: SonarSource/sonarcloud-github-action@master
+      #   env:
+      #     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      #     SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      #   with:
+      #     projectBaseDir: ${{ env.WORKING_DIRECTORY }}
+      #     args: >
+      #       -Dsonar.projectKey=${{ github.repository_owner }}_${{ github.event.repository.name }}
+      #       -Dsonar.organization=${{ github.repository_owner }}
+      #       -Dsonar.sources=src
+      #       -Dsonar.exclusions=node_modules/**,coverage/**,*.test.js,**/*.test.js
+      #       -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info
+      #   continue-on-error: true
 
   # Secrets Scanning
   secrets-scan:
