@@ -332,3 +332,4 @@ jobs:
           echo "❌ Pipeline failed"
           echo "🔍 Check the security scan results"
           echo "🛡️ Fix security issues before deployment"
+          
