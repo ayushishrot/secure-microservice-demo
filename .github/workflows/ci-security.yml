@@ -11,6 +11,7 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
+  # Static Code Analysis
   static-analysis:
     name: Static Code Analysis
     runs-on: ubuntu-latest
@@ -24,13 +25,12 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '18'
+          cache: 'npm'
 
       - name: Install dependencies
-        working-directory: ./app
         run: npm ci
 
       - name: Run ESLint
-        working-directory: ./app
         run: npm run lint || true
 
       - name: Run Semgrep
@@ -45,20 +45,6 @@ jobs:
         with:
           sarif_file: semgrep-results.sarif
 
-      # - name: Run Semgrep
-      #   working-directory: ./app
-      #   uses: returntocorp/semgrep-action@v1
-      #   with:
-      #     config: >- 
-      #       p/security-audit
-      #       p/secrets
-      #       p/nodejs
-      #       p/docker
-      #       p/owasp-top-ten
-      #   env:
-      #     SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
-      #   continue-on-error: false
-
       - name: SonarCloud Scan
         uses: SonarSource/sonarcloud-github-action@master
         env:
@@ -68,11 +54,12 @@ jobs:
           args: >
             -Dsonar.projectKey=${{ github.repository_owner }}_${{ github.event.repository.name }}
             -Dsonar.organization=${{ github.repository_owner }}
-            -Dsonar.sources=./app
+            -Dsonar.sources=.
             -Dsonar.exclusions=node_modules/**,coverage/**,*.test.js
             -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info
         continue-on-error: false
 
+  # Secrets Scanning
   secrets-scan:
     name: Secrets Detection
     runs-on: ubuntu-latest
@@ -84,7 +71,6 @@ jobs:
 
       - name: Run TruffleHog
         uses: trufflesecurity/trufflehog@main
-        working-directory: ./app
         with:
           path: ./
           base: main
@@ -93,11 +79,11 @@ jobs:
 
       - name: GitLeaks Scan
         uses: gitleaks/gitleaks-action@v2
-        working-directory: ./app
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
 
+  # Docker Security Analysis
   docker-security:
     name: Docker Security Scan
     runs-on: ubuntu-latest
@@ -131,7 +117,6 @@ jobs:
 
       - name: Build Docker image for scanning
         uses: docker/build-push-action@v5
-        working-directory: ./app
         id: build
         with:
           context: .
@@ -142,7 +127,7 @@ jobs:
           cache-to: type=gha,mode=max
           load: true
 
-      - name: Run Trivy vulnerability scanner on image (SARIF)
+      - name: Run Trivy vulnerability scanner on image
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
@@ -157,7 +142,7 @@ jobs:
         with:
           sarif_file: 'trivy-results.sarif'
 
-      - name: Run Trivy vulnerability scanner (Table)
+      - name: Run Trivy vulnerability scanner in table format
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
@@ -165,7 +150,7 @@ jobs:
           severity: 'CRITICAL,HIGH'
           exit-code: '1'
 
-      - name: Run Dockle
+      - name: Run Dockle for Docker image linting
         run: |
           docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
             goodwithtech/dockle:latest \
@@ -173,7 +158,7 @@ jobs:
             --exit-level WARN \
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
 
-      - name: Run Snyk
+      - name: Run Snyk to check Docker image for vulnerabilities
         uses: snyk/actions/docker@master
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
@@ -182,6 +167,7 @@ jobs:
           args: --severity-threshold=high --fail-on=all
         continue-on-error: false
 
+  # Infrastructure Security Scanning
   infrastructure-scan:
     name: Infrastructure Security Scan
     runs-on: ubuntu-latest
@@ -190,10 +176,10 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Run Checkov
+      - name: Run Checkov against Docker Compose
         uses: bridgecrewio/checkov-action@master
         with:
-          directory: ./app
+          directory: .
           framework: dockerfile,docker_compose
           output_format: sarif
           output_file_path: checkov-results.sarif
@@ -201,13 +187,13 @@ jobs:
           skip_check: CKV_DOCKER_1
           soft_fail: false
 
-      - name: Upload Checkov results
+      - name: Upload Checkov scan results
         uses: github/codeql-action/upload-sarif@v2
         if: always()
         with:
           sarif_file: checkov-results.sarif
 
-      - name: Run Hadolint
+      - name: Run Hadolint for Dockerfile linting
         uses: hadolint/hadolint-action@v3.1.0
         with:
           dockerfile: Dockerfile
@@ -215,30 +201,40 @@ jobs:
           output-file: hadolint-results.sarif
           no-fail: false
 
-      - name: Upload Hadolint results
+      - name: Upload Hadolint scan results
         uses: github/codeql-action/upload-sarif@v2
         if: always()
         with:
           sarif_file: hadolint-results.sarif
 
+  # Security Gate - Only proceed if all security checks pass
   security-gate:
     name: Security Gate
     runs-on: ubuntu-latest
     needs: [static-analysis, secrets-scan, docker-security, infrastructure-scan]
     if: always()
     steps:
-      - name: Enforce Security Checks
+      - name: Check Security Status
         run: |
           if [[ "${{ needs.static-analysis.result }}" != "success" ]]; then
-            echo "❌ Static analysis failed"; exit 1; fi
+            echo "❌ Static analysis failed"
+            exit 1
+          fi
           if [[ "${{ needs.secrets-scan.result }}" != "success" ]]; then
-            echo "❌ Secrets scan failed"; exit 1; fi
+            echo "❌ Secrets scan failed"
+            exit 1
+          fi
           if [[ "${{ needs.docker-security.result }}" != "success" ]]; then
-            echo "❌ Docker security scan failed"; exit 1; fi
+            echo "❌ Docker security scan failed"
+            exit 1
+          fi
           if [[ "${{ needs.infrastructure-scan.result }}" != "success" ]]; then
-            echo "❌ Infrastructure scan failed"; exit 1; fi
+            echo "❌ Infrastructure scan failed"
+            exit 1
+          fi
           echo "✅ All security gates passed"
 
+  # Build and Push - Only if security gates pass
   build-and-push:
     name: Build and Push to Registry
     runs-on: ubuntu-latest
@@ -270,11 +266,11 @@ jobs:
             type=sha,prefix={{branch}}-
             type=raw,value=latest,enable={{is_default_branch}}
 
-      - name: Build and Push Image
+      - name: Build and push Docker image
         uses: docker/build-push-action@v5
         id: build
         with:
-          context: ./app
+          context: .
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -296,6 +292,7 @@ jobs:
           name: sbom
           path: sbom.spdx.json
 
+  # Post-deployment security verification
   post-deployment-security:
     name: Post-Deployment Security Verification
     runs-on: ubuntu-latest
@@ -313,21 +310,23 @@ jobs:
           severity: 'CRITICAL,HIGH'
           exit-code: '1'
 
-      - name: Install Cosign
+      - name: Container Image Signing with Cosign
         uses: sigstore/cosign-installer@v3.1.1
 
-      - name: Sign image with Cosign
+      - name: Sign container image
         env:
           COSIGN_EXPERIMENTAL: 1
-        run: cosign sign --yes ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.build-and-push.outputs.image-digest }}
+        run: |
+          cosign sign --yes ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.build-and-push.outputs.image-digest }}
 
+  # Notification
   notify:
     name: Notification
     runs-on: ubuntu-latest
     needs: [build-and-push, post-deployment-security]
     if: always()
     steps:
-      - name: Notify Success
+      - name: Notify on Success
         if: needs.build-and-push.result == 'success' && needs.post-deployment-security.result == 'success'
         run: |
           echo "✅ Pipeline completed successfully"
@@ -335,7 +334,7 @@ jobs:
           echo "📦 Image pushed to registry"
           echo "🔐 Image signed with Cosign"
 
-      - name: Notify Failure
+      - name: Notify on Failure
         if: failure()
         run: |
           echo "❌ Pipeline failed"
