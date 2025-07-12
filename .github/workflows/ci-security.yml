@@ -11,6 +11,7 @@ env:
   WORKING_DIRECTORY: app
   AWS_ACCOUNT_ID: 975050058935  # replace with the account id
   AWS_REGION: us-east-1
+  IMAGE_TAG: latest
 
 jobs:
   # Static Code Analysis
