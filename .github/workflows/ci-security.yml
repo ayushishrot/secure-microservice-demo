@@ -65,7 +65,6 @@ jobs:
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
-
   # Secrets Scanning
   secrets-scan:
     name: Secrets Detection
